@@ -4,11 +4,17 @@ Uber Driver Lease vs Finance Calculator
 Backend server with Flask - performs all cost calculations
 """
 
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, redirect
 import json
 import os
 
 app = Flask(__name__, static_folder='.')
+
+@app.before_request
+def force_https():
+    # Railway sits behind a proxy; the original protocol is in this header.
+    if request.headers.get('X-Forwarded-Proto') == 'http':
+        return redirect(request.url.replace('http://', 'https://'), code=301)
 
 # ─────────────────────────────────────────────
 #  CAR DATABASE  (top 10 best-selling in Canada)
