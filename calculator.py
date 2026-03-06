@@ -493,6 +493,7 @@ def calculate():
     if 'maintenance_lease' in data: car['maintenance_lease'] = float(data['maintenance_lease'])
     if 'maintenance_finance' in data: car['maintenance_finance'] = float(data['maintenance_finance'])
     if 'extra_mileage_cost' in data: car['extra_mileage_cost'] = float(data['extra_mileage_cost'])
+    if 'lease_mileage_allowance' in data: car['lease_mileage_allowance'] = float(data['lease_mileage_allowance'])
 
     params = {
         "car_price":    float(data.get('car_price', car['msrp'])),

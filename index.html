@@ -228,6 +228,15 @@
       font-size: 0.68rem; color: var(--muted);
       margin-top: 0.3rem;
     }
+    .mileage-preview {
+      font-size: 0.72rem; margin-top: 0.45rem;
+      padding: 0.4rem 0.65rem;
+      background: rgba(255,184,0,0.07);
+      border: 1px solid rgba(255,184,0,0.2);
+      border-radius: 6px;
+      line-height: 1.5;
+      min-height: 1.6rem;
+    }
     .field-prefix-wrap {
       position: relative;
     }
@@ -519,7 +528,7 @@
       </div>
       <div class="field">
         <label>Annual Mileage (km)</label>
-        <input type="number" id="km_per_year" value="90000" min="10000" step="1000" />
+        <input type="number" id="km_per_year" value="90000" min="10000" step="1000" oninput="updateMileagePreview()" />
         <div class="field-hint">Avg Uber driver: 80,000–100,000 km/yr</div>
       </div>
     </div>
@@ -563,9 +572,15 @@
         <label>Extra Mileage Cost ($/km)</label>
         <div class="field-prefix-wrap">
           <span class="field-prefix">$</span>
-          <input type="number" id="extra_mileage_cost" step="0.01" />
+          <input type="number" id="extra_mileage_cost" step="0.01" oninput="updateMileagePreview()" />
         </div>
         <div class="field-hint">Per-km charge over lease allowance</div>
+      </div>
+      <div class="field">
+        <label>Lease Mileage Allowance (km/yr)</label>
+        <input type="number" id="lease_mileage_allowance" value="20000" min="0" step="1000" oninput="updateMileagePreview()" />
+        <div class="field-hint">Standard: 20,000 km/yr — extra km are charged above this</div>
+        <div id="mileage_preview" class="mileage-preview"></div>
       </div>
     </div>
 
@@ -752,6 +767,8 @@ function selectCar(key) {
   document.getElementById('maintenance_lease').value = car.maintenance_lease;
   document.getElementById('maintenance_finance').value = car.maintenance_finance;
   document.getElementById('extra_mileage_cost').value = car.extra_mileage_cost;
+  document.getElementById('lease_mileage_allowance').value = car.lease_mileage_allowance;
+  updateMileagePreview();
   // Hide results
   document.getElementById('results').classList.remove('visible');
 }
@@ -777,8 +794,9 @@ async function calculate() {
     insurance_finance:+document.getElementById('insurance_finance').value,
     maintenance_lease:+document.getElementById('maintenance_lease').value,
     maintenance_finance: +document.getElementById('maintenance_finance').value,
-    extra_mileage_cost: +document.getElementById('extra_mileage_cost').value,
-    sell_year:          +document.getElementById('sell_year').value,
+    extra_mileage_cost:       +document.getElementById('extra_mileage_cost').value,
+    lease_mileage_allowance:  +document.getElementById('lease_mileage_allowance').value,
+    sell_year:                +document.getElementById('sell_year').value,
   };
 
   try {
@@ -938,6 +956,24 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) calculate();
 });
 
+// ─────────────────────────────────────────────
+//  LIVE MILEAGE PREVIEW
+// ─────────────────────────────────────────────
+function updateMileagePreview() {
+  const kmPerYear  = +document.getElementById('km_per_year').value  || 0;
+  const allowance  = +document.getElementById('lease_mileage_allowance').value || 0;
+  const costPerKm  = +document.getElementById('extra_mileage_cost').value || 0;
+  const excessKm   = Math.max(0, kmPerYear - allowance);
+  const annualCost = excessKm * costPerKm;
+  const el = document.getElementById('mileage_preview');
+  if (!el) return;
+  if (excessKm === 0) {
+    el.innerHTML = '<span style="color:var(--accent)">✓ Within allowance — no extra charge</span>';
+  } else {
+    el.innerHTML = `<span style="color:var(--amber)">${excessKm.toLocaleString()} excess km &times; $${costPerKm}/km = <strong style="color:var(--amber)">$${Math.round(annualCost).toLocaleString()}/yr</strong></span>`;
+  }
+}
+
 // Keep sell_year default in sync with finance_years
 function syncSellYear() {
   const fy = +document.getElementById('finance_years').value;
@@ -945,7 +981,7 @@ function syncSellYear() {
   if (+sy.value > fy) sy.value = fy;
   sy.max = fy;
 }
-init();
+init().then(() => updateMileagePreview());
 </script>
 </body>
 </html>
