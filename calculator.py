@@ -194,7 +194,7 @@ BUSINESS_USE_PCT     = 0.85   # % of driving that is business use (Uber trips vs
 CCA_CLASS_10A_CAP    = 36000  # CRA Class 10.1 vehicle cost cap for CCA (2024)
 CCA_CLASS_10A_RATE   = 0.30   # 30% declining balance CCA rate (Class 10.1)
 FINANCE_INTEREST_CAP   = 300    # CRA max deductible interest = $10/day ~ $300/mo
-MILEAGE_PENALTY_PER_KM = 0.015  # $0.015/excess km (industry std for high-mileage penalty)
+STD_KM_PER_YEAR        = 20000  # km/yr a normal (non-Uber) driver puts on a car
 
 
 # ─────────────────────────────────────────────
@@ -211,6 +211,35 @@ def calculate_depreciation_schedule(car_price, dep_rates, years):
         schedule.append(round(dep_amount, 2))
         current_value -= dep_amount
     return schedule
+
+
+def market_value_by_mileage(price, dep_rates, total_km):
+    """
+    Estimate market value based on mileage-equivalent age.
+
+    Used-car buyers price by km, not calendar years.  A car with 90,000 km
+    after 1 year of Uber looks like a 4.5-year-old car (90,000 / 20,000 std
+    km/yr) to any buyer on AutoTrader/CarGurus.  We apply the same declining-
+    balance depreciation curve but indexed to that effective age.
+
+    Interpolates linearly between whole years so partial years work correctly.
+    """
+    effective_years = total_km / STD_KM_PER_YEAR
+    full_years      = int(effective_years)
+    partial         = effective_years - full_years
+    max_yr          = max(dep_rates.keys())
+
+    val = float(price)
+    for yr in range(1, full_years + 1):
+        rate = dep_rates.get(yr, dep_rates[max_yr])
+        val -= val * rate
+    # Partial final year
+    if partial > 0:
+        next_yr = min(full_years + 1, max_yr)
+        rate    = dep_rates.get(next_yr, dep_rates[max_yr])
+        val    -= val * rate * partial
+
+    return max(0.0, round(val, 2))
 
 
 def calculate_lease(params, car):
@@ -344,21 +373,25 @@ def calculate_finance(params, car):
         bal   -= p_pmt
     remaining_balance = max(0.0, bal)
 
-    # ── Market value at sell_year (base, standard mileage) ──────────────────
+    # ── Market value at sell_year — mileage-equivalent age ─────────────────
+    # Buyers price used cars by km, not calendar years.
+    # 90,000 km/yr Uber car after 3 yrs = 270,000 km = effectively a
+    # 13.5-year-old car to any buyer (270,000 / 20,000 std km/yr).
+    # We apply the declining-balance depreciation curve against that effective
+    # age, which gives a realistic AutoTrader-style market value.
+    total_km             = km_per_year * sell_year
+    effective_age_years  = total_km / STD_KM_PER_YEAR   # e.g. 4.5 yrs for 90k/yr @ yr1
+    estimated_sale_price = market_value_by_mileage(price, dep_rates, total_km)
+
+    # For display / tooltip — what a time-only price would have been
     base_val = price
     for yr in range(1, sell_year + 1):
         rate     = dep_rates.get(yr, dep_rates[max(dep_rates.keys())])
         base_val -= base_val * rate
-    base_market_value = base_val
-
-    # ── Mileage penalty ──────────────────────────────────────────────────────
-    # Uber: ~90,000 km/yr.  Average used-car buyer expects ~20,000 km/yr.
-    # Each excess km reduces market value by MILEAGE_PENALTY_PER_KM.
-    total_km      = km_per_year * sell_year
-    avg_km        = 20000 * sell_year
-    excess_km     = max(0.0, total_km - avg_km)
-    mileage_penalty    = excess_km * MILEAGE_PENALTY_PER_KM
-    estimated_sale_price = max(0.0, base_market_value - mileage_penalty)
+    base_market_value = round(base_val, 2)
+    # The hidden cost of high mileage vs a normal driver's same-age car
+    mileage_discount  = max(0.0, round(base_market_value - estimated_sale_price, 2))
+    excess_km         = max(0, int(total_km - STD_KM_PER_YEAR * sell_year))
 
     # ── Net sale result ──────────────────────────────────────────────────────
     # Positive = gain (car worth more than you owe) → reduces cost
@@ -418,9 +451,11 @@ def calculate_finance(params, car):
         "years":                      years,
         "sell_year":                  sell_year,
         "total_km":                   int(total_km),
-        "base_market_value":          round(base_market_value, 2),
-        "mileage_penalty":            round(mileage_penalty, 2),
-        "excess_km":                  int(excess_km),
+        "effective_age_years":        round(effective_age_years, 1),
+        "base_market_value":          base_market_value,
+        "mileage_discount":           mileage_discount,
+        "mileage_penalty":            mileage_discount,   # kept for backward compat
+        "excess_km":                  excess_km,
         "estimated_sale_price":       round(estimated_sale_price, 2),
         "remaining_balance":          round(remaining_balance, 2),
         "sale_net":                   round(sale_net, 2),

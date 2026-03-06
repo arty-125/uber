@@ -860,7 +860,13 @@ function renderResults(d) {
   const saleLabel    = saleIsGain
     ? '✦ Sale Equity Gain (one-time)'
     : '⚠ Sale Shortfall — underwater (one-time)';
-  const saleTooltip  = `ONE-TIME at year ${finance.sell_year}: Sale price $${Math.round(finance.estimated_sale_price).toLocaleString()} − loan balance $${Math.round(finance.remaining_balance).toLocaleString()} = ${finance.sale_net >= 0 ? '+' : ''}$${Math.round(finance.sale_net).toLocaleString()} · ${(finance.total_km||0).toLocaleString()} km driven · mileage penalty $${Math.round(finance.mileage_penalty).toLocaleString()} · amortised over ${finance.sell_year} yrs = ${finance.sale_net >= 0 ? '+' : ''}$${Math.round(finance.sale_net_per_yr).toLocaleString()}/yr in total cost`;
+  const saleTooltip  = `ONE-TIME at year ${finance.sell_year}: `
+    + `${(finance.total_km||0).toLocaleString()} km driven ÷ 20,000 std km/yr = effective age ${finance.effective_age_years} yrs · `
+    + `market value $${Math.round(finance.estimated_sale_price).toLocaleString()} `
+    + `(time-only value $${Math.round(finance.base_market_value).toLocaleString()}, mileage discount −$${Math.round(finance.mileage_discount).toLocaleString()}) · `
+    + `loan balance $${Math.round(finance.remaining_balance).toLocaleString()} · `
+    + `net ${finance.sale_net >= 0 ? '+' : ''}$${Math.round(finance.sale_net).toLocaleString()} · `
+    + `avg over ${finance.sell_year} yrs = ${finance.sale_net >= 0 ? '+' : ''}$${Math.round(finance.sale_net_per_yr).toLocaleString()}/yr in total cost`;
 
   const financeRows = [
     { label: 'Loan Payments (monthly × 12)', val: finance.annual_payment,
