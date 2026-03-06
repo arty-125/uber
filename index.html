@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lease vs Finance Calculator — Uber Drivers</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --black:   #0a0a0b;
+      --dark:    #111114;
+      --panel:   #18181d;
+      --border:  #2a2a32;
+      --muted:   #3a3a45;
+      --text:    #e8e8f0;
+      --sub:     #8888a0;
+      --accent:  #00e5a0;
+      --amber:   #ffb800;
+      --danger:  #ff4d6d;
+      --lease:   #00c9ff;
+      --finance: #f5a623;
+      --glow:    0 0 24px rgba(0,229,160,0.18);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--black);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* GRID TEXTURE */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none; z-index: 0;
+    }
+
+    /* ── HEADER ── */
+    header {
+      position: relative; z-index: 10;
+      padding: 2rem 2rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(0,229,160,0.04) 0%, transparent 100%);
+    }
+    .header-inner {
+      max-width: 1200px; margin: 0 auto;
+      display: flex; align-items: center; gap: 1.5rem;
+    }
+    .logo-badge {
+      width: 52px; height: 52px; border-radius: 12px;
+      background: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      box-shadow: 0 0 30px rgba(0,229,160,0.4);
+    }
+    .logo-badge svg { width: 28px; height: 28px; fill: var(--black); }
+    .header-text h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(1.4rem, 3vw, 2rem);
+      font-weight: 800; letter-spacing: -0.03em;
+      line-height: 1.1;
+    }
+    .header-text h1 span { color: var(--accent); }
+    .header-text p {
+      font-size: 0.85rem; color: var(--sub);
+      margin-top: 0.3rem; font-weight: 300;
+    }
+    .header-tag {
+      margin-left: auto;
+      background: rgba(0,229,160,0.08);
+      border: 1px solid rgba(0,229,160,0.25);
+      color: var(--accent);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.7rem; padding: 0.35rem 0.75rem; border-radius: 100px;
+      white-space: nowrap;
+    }
+
+    /* ── MAIN LAYOUT ── */
+    main {
+      position: relative; z-index: 5;
+      max-width: 1200px; margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+    }
+
+    /* ── CAR SELECTOR ── */
+    .car-selector-section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.75rem;
+      margin-bottom: 1.5rem;
+    }
+    .section-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.68rem; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--accent);
+      margin-bottom: 1rem;
+    }
+    .car-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 0.75rem;
+    }
+    .car-card {
+      background: var(--dark);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 0.9rem 1rem;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .car-card::before {
+      content: ''; position: absolute;
+      top: 0; left: 0; right: 0; height: 2px;
+      background: var(--accent); opacity: 0;
+      transition: opacity 0.18s;
+    }
+    .car-card:hover { border-color: var(--muted); transform: translateY(-1px); }
+    .car-card.active {
+      border-color: var(--accent);
+      background: rgba(0,229,160,0.06);
+    }
+    .car-card.active::before { opacity: 1; }
+    .car-type-badge {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.6rem; letter-spacing: 0.1em;
+      color: var(--sub); text-transform: uppercase;
+      margin-bottom: 0.3rem;
+    }
+    .car-card.active .car-type-badge { color: var(--accent); }
+    .car-name {
+      font-family: 'Syne', sans-serif;
+      font-size: 0.82rem; font-weight: 700;
+      line-height: 1.3;
+    }
+    .car-msrp {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.7rem; color: var(--sub);
+      margin-top: 0.4rem;
+    }
+
+    /* ── TWO-COLUMN FORM ── */
+    .forms-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    @media (max-width: 700px) { .forms-grid { grid-template-columns: 1fr; } }
+
+    .form-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.75rem;
+    }
+    .form-panel.lease-panel { border-top: 2px solid var(--lease); }
+    .form-panel.finance-panel { border-top: 2px solid var(--finance); }
+
+    .panel-header {
+      display: flex; align-items: center; gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+    .panel-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+    }
+    .lease-panel .panel-dot { background: var(--lease); box-shadow: 0 0 8px var(--lease); }
+    .finance-panel .panel-dot { background: var(--finance); box-shadow: 0 0 8px var(--finance); }
+    .panel-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 1rem; font-weight: 700;
+    }
+    .panel-tag {
+      margin-left: auto;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.65rem; padding: 0.2rem 0.6rem;
+      border-radius: 100px;
+    }
+    .lease-panel .panel-tag {
+      background: rgba(0,201,255,0.1);
+      border: 1px solid rgba(0,201,255,0.25);
+      color: var(--lease);
+    }
+    .finance-panel .panel-tag {
+      background: rgba(245,166,35,0.1);
+      border: 1px solid rgba(245,166,35,0.25);
+      color: var(--finance);
+    }
+
+    .field { margin-bottom: 1rem; }
+    .field label {
+      display: block;
+      font-size: 0.75rem; font-weight: 500;
+      color: var(--sub); margin-bottom: 0.4rem;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .field input, .field select {
+      width: 100%;
+      background: var(--dark);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.85rem;
+      padding: 0.65rem 0.9rem;
+      transition: border-color 0.15s;
+      outline: none;
+      appearance: none;
+    }
+    .field input:focus, .field select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(0,229,160,0.12);
+    }
+    .field-hint {
+      font-size: 0.68rem; color: var(--muted);
+      margin-top: 0.3rem;
+    }
+    .field-prefix-wrap {
+      position: relative;
+    }
+    .field-prefix {
+      position: absolute; left: 0.9rem; top: 50%;
+      transform: translateY(-50%);
+      color: var(--sub); font-family: 'DM Mono', monospace;
+      font-size: 0.85rem; pointer-events: none;
+    }
+    .field-prefix-wrap input { padding-left: 1.6rem; }
+
+    /* ── SHARED PARAMS ── */
+    .shared-params {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.75rem;
+      margin-bottom: 1.5rem;
+    }
+    .shared-fields {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    /* ── CALCULATE BUTTON ── */
+    .calc-btn-wrap { text-align: center; margin-bottom: 2.5rem; }
+    .calc-btn {
+      background: var(--accent);
+      color: var(--black);
+      border: none; border-radius: 10px;
+      font-family: 'Syne', sans-serif;
+      font-size: 1rem; font-weight: 800;
+      letter-spacing: 0.02em;
+      padding: 1rem 3rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 0 24px rgba(0,229,160,0.3);
+      position: relative; overflow: hidden;
+    }
+    .calc-btn:hover {
+      background: #00ffb2;
+      box-shadow: 0 0 40px rgba(0,229,160,0.5);
+      transform: translateY(-2px);
+    }
+    .calc-btn:active { transform: translateY(0); }
+    .calc-btn.loading { pointer-events: none; opacity: 0.7; }
+    .calc-btn .spinner {
+      display: none; width: 16px; height: 16px;
+      border: 2px solid rgba(0,0,0,0.3);
+      border-top-color: var(--black);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-right: 0.5rem; vertical-align: middle;
+    }
+    .calc-btn.loading .spinner { display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── RESULTS ── */
+    #results { display: none; }
+    #results.visible { display: block; }
+
+    .verdict-banner {
+      border-radius: 16px;
+      padding: 1.75rem 2rem;
+      margin-bottom: 1.5rem;
+      border: 1px solid;
+      display: flex; align-items: center; gap: 1.5rem;
+      animation: fadeUp 0.4s ease both;
+    }
+    .verdict-banner.lease-wins {
+      background: rgba(0,201,255,0.07);
+      border-color: rgba(0,201,255,0.3);
+    }
+    .verdict-banner.finance-wins {
+      background: rgba(245,166,35,0.07);
+      border-color: rgba(245,166,35,0.3);
+    }
+    .verdict-icon {
+      width: 56px; height: 56px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; font-size: 1.6rem;
+    }
+    .lease-wins .verdict-icon { background: rgba(0,201,255,0.15); }
+    .finance-wins .verdict-icon { background: rgba(245,166,35,0.15); }
+    .verdict-text h2 {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.4rem; font-weight: 800;
+    }
+    .lease-wins .verdict-text h2 { color: var(--lease); }
+    .finance-wins .verdict-text h2 { color: var(--finance); }
+    .verdict-text p { font-size: 0.85rem; color: var(--sub); margin-top: 0.3rem; }
+    .verdict-savings {
+      margin-left: auto; text-align: right; flex-shrink: 0;
+    }
+    .verdict-savings .amount {
+      font-family: 'Syne', sans-serif;
+      font-size: 2rem; font-weight: 800;
+    }
+    .lease-wins .verdict-savings .amount { color: var(--lease); }
+    .finance-wins .verdict-savings .amount { color: var(--finance); }
+    .verdict-savings .label { font-size: 0.72rem; color: var(--sub); }
+
+    /* ── COST COMPARISON ── */
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    @media (max-width: 700px) { .comparison-grid { grid-template-columns: 1fr; } }
+
+    .result-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem;
+      animation: fadeUp 0.4s 0.1s ease both;
+    }
+    .result-panel.winner-panel { border-color: rgba(0,229,160,0.3); }
+
+    .result-header {
+      display: flex; align-items: center; gap: 0.75rem;
+      margin-bottom: 1.5rem; padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .result-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 0.95rem; font-weight: 700;
+    }
+    .result-total {
+      margin-left: auto;
+      font-family: 'DM Mono', monospace;
+      font-size: 1.3rem; font-weight: 500;
+    }
+    .lease-color { color: var(--lease); }
+    .finance-color { color: var(--finance); }
+
+    .cost-row {
+      display: flex; align-items: center;
+      padding: 0.55rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      font-size: 0.82rem;
+    }
+    .cost-row:last-child { border-bottom: none; }
+    .cost-label { color: var(--sub); flex: 1; }
+    .cost-bar-wrap { flex: 2; margin: 0 0.75rem; }
+    .cost-bar-bg {
+      height: 4px; background: var(--muted);
+      border-radius: 2px; overflow: hidden;
+    }
+    .cost-bar-fill {
+      height: 100%; border-radius: 2px;
+      transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .cost-bar-fill.lease-bar { background: var(--lease); }
+    .cost-bar-fill.finance-bar { background: var(--finance); }
+    .cost-bar-fill.saving-bar { background: var(--accent); }
+    .cost-bar-fill.loss-bar   { background: var(--danger); }
+    .cost-value {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.8rem; text-align: right;
+      min-width: 70px;
+    }
+    .cost-value.negative { color: var(--accent); }
+
+    /* ── REASONS ── */
+    .reasons-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      animation: fadeUp 0.4s 0.2s ease both;
+    }
+    .reason-item {
+      display: flex; gap: 0.75rem;
+      padding: 0.6rem 0;
+      font-size: 0.83rem;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .reason-item:last-child { border-bottom: none; }
+    .reason-bullet {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent); flex-shrink: 0;
+      margin-top: 0.45rem;
+    }
+    .reason-text { color: var(--sub); line-height: 1.5; }
+    .reason-text strong { color: var(--text); }
+
+    /* ── MONTHLY PAYMENT CALLOUTS ── */
+    .payment-row {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 1rem; margin-bottom: 1.5rem;
+      animation: fadeUp 0.4s 0.25s ease both;
+    }
+    @media (max-width: 500px) { .payment-row { grid-template-columns: 1fr; } }
+
+    .payment-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.2rem 1.4rem;
+      display: flex; align-items: center; gap: 1rem;
+    }
+    .payment-card-icon {
+      font-size: 1.5rem;
+    }
+    .payment-card-label {
+      font-size: 0.72rem; color: var(--sub);
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .payment-card-value {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.3rem; font-weight: 800;
+      margin-top: 0.1rem;
+    }
+
+    /* ── ANIMATIONS ── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── ERROR ── */
+    .error-box {
+      background: rgba(255,77,109,0.1);
+      border: 1px solid rgba(255,77,109,0.3);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      color: var(--danger);
+      font-size: 0.83rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+    .error-box.visible { display: block; }
+
+    /* ── FOOTER ── */
+    footer {
+      text-align: center;
+      padding: 1.5rem;
+      color: var(--muted);
+      font-size: 0.72rem;
+      border-top: 1px solid var(--border);
+      position: relative; z-index: 5;
+    }
+
+    /* ── SCROLLBAR ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--dark); }
+    ::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo-badge">
+      <svg viewBox="0 0 24 24"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.85 7h10.29l1.08 3.11H5.77L6.85 7zM19 17H5v-5h14v5z"/><circle cx="7.5" cy="14.5" r="1.5"/><circle cx="16.5" cy="14.5" r="1.5"/></svg>
+    </div>
+    <div class="header-text">
+      <h1>Uber Driver <span>Cost Calculator</span></h1>
+      <p>Lease vs Finance — Average yearly cost comparison with tax deductions</p>
+    </div>
+    <div class="header-tag">🇨🇦 Canada · 2024</div>
+  </div>
+</header>
+
+<main>
+  <div class="error-box" id="errorBox"></div>
+
+  <!-- CAR SELECTOR -->
+  <div class="car-selector-section">
+    <div class="section-label">① Select Vehicle</div>
+    <div class="car-grid" id="carGrid"></div>
+  </div>
+
+  <!-- SHARED PARAMS -->
+  <div class="shared-params">
+    <div class="section-label">② Trip & Usage Parameters</div>
+    <div class="shared-fields">
+      <div class="field">
+        <label>Car Purchase Price</label>
+        <div class="field-prefix-wrap">
+          <span class="field-prefix">$</span>
+          <input type="number" id="car_price" value="42000" min="10000" step="500" />
+        </div>
+        <div class="field-hint">MSRP auto-filled on car selection</div>
+      </div>
+      <div class="field">
+        <label>Annual Mileage (km)</label>
+        <input type="number" id="km_per_year" value="90000" min="10000" step="1000" />
+        <div class="field-hint">Avg Uber driver: 80,000–100,000 km/yr</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TWO-COLUMN FORM -->
+  <div class="forms-grid">
+    <!-- LEASE PANEL -->
+    <div class="form-panel lease-panel">
+      <div class="panel-header">
+        <div class="panel-dot"></div>
+        <div class="panel-title">Lease Parameters</div>
+        <div class="panel-tag">LEASE</div>
+      </div>
+      <div class="field">
+        <label>Lease Term (years)</label>
+        <input type="number" id="lease_years" value="3" min="1" max="5" />
+      </div>
+      <div class="field">
+        <label>Interest Rate (APR %)</label>
+        <input type="number" id="lease_rate" step="0.01" />
+        <div class="field-hint">Auto-filled from manufacturer rate</div>
+      </div>
+      <div class="field">
+        <label>Insurance / Year</label>
+        <div class="field-prefix-wrap">
+          <span class="field-prefix">$</span>
+          <input type="number" id="insurance_lease" step="50" />
+        </div>
+        <div class="field-hint">Avg of top 3 insurers (TD, Intact, Aviva)</div>
+      </div>
+      <div class="field">
+        <label>Maintenance / Year (user-pays)</label>
+        <div class="field-prefix-wrap">
+          <span class="field-prefix">$</span>
+          <input type="number" id="maintenance_lease" step="50" />
+        </div>
+        <div class="field-hint">Tires, wiper blades, brakes (not covered)</div>
+      </div>
+      <div class="field">
+        <label>Extra Mileage Cost ($/km)</label>
+        <div class="field-prefix-wrap">
+          <span class="field-prefix">$</span>
+          <input type="number" id="extra_mileage_cost" step="0.01" />
+        </div>
+        <div class="field-hint">Per-km charge over lease allowance</div>
+      </div>
+    </div>
+
+    <!-- FINANCE PANEL -->
+    <div class="form-panel finance-panel">
+      <div class="panel-header">
+        <div class="panel-dot"></div>
+        <div class="panel-title">Finance Parameters</div>
+        <div class="panel-tag">FINANCE</div>
+      </div>
+      <div class="field">
+        <label>Finance Term (years)</label>
+        <input type="number" id="finance_years" value="7" min="1" max="10" oninput="syncSellYear()" />
+      </div>
+      <div class="field">
+        <label>Sell Car at Year</label>
+        <input type="number" id="sell_year" value="7" min="1" max="20" />
+        <div class="field-hint">When you plan to sell — calculates exact gain or loss at that point</div>
+      </div>
+      <div class="field">
+        <label>Interest Rate (APR %)</label>
+        <input type="number" id="finance_rate" step="0.01" />
+        <div class="field-hint">Auto-filled from manufacturer rate</div>
+      </div>
+      <div class="field">
+        <label>Insurance / Year</label>
+        <div class="field-prefix-wrap">
+          <span class="field-prefix">$</span>
+          <input type="number" id="insurance_finance" step="50" />
+        </div>
+        <div class="field-hint">Avg of top 3 insurers (TD, Intact, Aviva)</div>
+      </div>
+      <div class="field">
+        <label>Maintenance / Year (all costs)</label>
+        <div class="field-prefix-wrap">
+          <span class="field-prefix">$</span>
+          <input type="number" id="maintenance_finance" step="50" />
+        </div>
+        <div class="field-hint">All maintenance — rises after year 3</div>
+      </div>
+      <div class="field" style="visibility:hidden;">
+        <label>—</label>
+        <input type="text" value="N/A — you own the car" readonly style="cursor:default;color:var(--muted);" />
+        <div class="field-hint">No per-km charge when financing</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="calc-btn-wrap">
+    <button class="calc-btn" id="calcBtn" onclick="calculate()">
+      <span class="spinner"></span>
+      Calculate Yearly Cost
+    </button>
+  </div>
+
+  <!-- RESULTS -->
+  <div id="results">
+    <!-- VERDICT -->
+    <div class="verdict-banner" id="verdictBanner">
+      <div class="verdict-icon" id="verdictIcon">🏆</div>
+      <div class="verdict-text">
+        <h2 id="verdictTitle"></h2>
+        <p id="verdictSub"></p>
+      </div>
+      <div class="verdict-savings">
+        <div class="amount" id="verdictAmount"></div>
+        <div class="label">savings per year</div>
+      </div>
+    </div>
+
+    <!-- MONTHLY PAYMENTS -->
+    <div class="payment-row">
+      <div class="payment-card">
+        <div class="payment-card-icon">🔵</div>
+        <div>
+          <div class="payment-card-label">Monthly Lease Payment</div>
+          <div class="payment-card-value lease-color" id="leaseMonthly">—</div>
+        </div>
+      </div>
+      <div class="payment-card">
+        <div class="payment-card-icon">🟠</div>
+        <div>
+          <div class="payment-card-label">Monthly Finance Payment</div>
+          <div class="payment-card-value finance-color" id="financeMonthly">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BREAKDOWN -->
+    <div class="comparison-grid">
+      <div class="result-panel" id="leasePanel">
+        <div class="result-header">
+          <div class="panel-dot" style="background:var(--lease);box-shadow:0 0 8px var(--lease)"></div>
+          <div class="result-title">Lease — Avg Yearly Cost</div>
+          <div class="result-total lease-color" id="leaseTotal">—</div>
+        </div>
+        <div id="leaseBreakdown"></div>
+      </div>
+      <div class="result-panel" id="financePanel">
+        <div class="result-header">
+          <div class="panel-dot" style="background:var(--finance);box-shadow:0 0 8px var(--finance)"></div>
+          <div class="result-title">Finance — Avg Yearly Cost</div>
+          <div class="result-total finance-color" id="financeTotal">—</div>
+        </div>
+        <div id="financeBreakdown"></div>
+      </div>
+    </div>
+
+    <!-- REASONS -->
+    <div class="reasons-panel">
+      <div class="section-label" style="margin-bottom:1rem;">Analysis & Reasoning</div>
+      <div id="reasonsList"></div>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  Data sources: Toyota Financial, Honda Financial, Ford Credit, Hyundai Finance, Mazda Capital ·
+  Insurance: TD Insurance, Intact, Aviva Canada (2024 avg) ·
+  CRA Lease Deduction Cap: $1,000/mo · Marginal tax rate assumed: 33%
+</footer>
+
+<script>
+// ─────────────────────────────────────────────
+//  STATE
+// ─────────────────────────────────────────────
+let carDb = {};
+let selectedCar = 'toyota_rav4_xle_hybrid';
+
+const fmt = (n) => '$' + Number(n).toLocaleString('en-CA', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+const fmtD = (n) => '$' + Number(n).toLocaleString('en-CA', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+// ─────────────────────────────────────────────
+//  INIT
+// ─────────────────────────────────────────────
+async function init() {
+  try {
+    const res = await fetch('/api/car-data');
+    carDb = await res.json();
+    buildCarGrid();
+    selectCar('toyota_rav4_xle_hybrid');
+  } catch (e) {
+    showError('Cannot connect to Python backend. Make sure calculator.py is running: python3 calculator.py');
+  }
+}
+
+function buildCarGrid() {
+  const grid = document.getElementById('carGrid');
+  grid.innerHTML = '';
+  // Order: SUVs first, then Sedans
+  const suv = Object.entries(carDb).filter(([,v]) => v.type === 'SUV');
+  const sed = Object.entries(carDb).filter(([,v]) => v.type === 'Sedan');
+  [...suv, ...sed].forEach(([key, car]) => {
+    const el = document.createElement('div');
+    el.className = 'car-card';
+    el.id = 'car_' + key;
+    el.innerHTML = `
+      <div class="car-type-badge">${car.type}</div>
+      <div class="car-name">${car.name}</div>
+      <div class="car-msrp">${fmt(car.msrp)}</div>
+    `;
+    el.onclick = () => selectCar(key);
+    grid.appendChild(el);
+  });
+}
+
+function selectCar(key) {
+  selectedCar = key;
+  const car = carDb[key];
+  // Update active state
+  document.querySelectorAll('.car-card').forEach(c => c.classList.remove('active'));
+  const el = document.getElementById('car_' + key);
+  if (el) {
+    el.classList.add('active');
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  // Auto-fill fields
+  document.getElementById('car_price').value = car.msrp;
+  document.getElementById('lease_rate').value = car.lease_rate;
+  document.getElementById('finance_rate').value = car.finance_rate;
+  document.getElementById('insurance_lease').value = car.insurance_lease;
+  document.getElementById('insurance_finance').value = car.insurance_finance;
+  document.getElementById('maintenance_lease').value = car.maintenance_lease;
+  document.getElementById('maintenance_finance').value = car.maintenance_finance;
+  document.getElementById('extra_mileage_cost').value = car.extra_mileage_cost;
+  // Hide results
+  document.getElementById('results').classList.remove('visible');
+}
+
+// ─────────────────────────────────────────────
+//  CALCULATE
+// ─────────────────────────────────────────────
+async function calculate() {
+  const btn = document.getElementById('calcBtn');
+  btn.classList.add('loading');
+  btn.querySelector('span').textContent = ' Calculating…';
+  hideError();
+
+  const payload = {
+    car_key:          selectedCar,
+    car_price:        +document.getElementById('car_price').value,
+    lease_years:      +document.getElementById('lease_years').value,
+    finance_years:    +document.getElementById('finance_years').value,
+    km_per_year:      +document.getElementById('km_per_year').value,
+    lease_rate:       +document.getElementById('lease_rate').value,
+    finance_rate:     +document.getElementById('finance_rate').value,
+    insurance_lease:  +document.getElementById('insurance_lease').value,
+    insurance_finance:+document.getElementById('insurance_finance').value,
+    maintenance_lease:+document.getElementById('maintenance_lease').value,
+    maintenance_finance: +document.getElementById('maintenance_finance').value,
+    extra_mileage_cost: +document.getElementById('extra_mileage_cost').value,
+    sell_year:          +document.getElementById('sell_year').value,
+  };
+
+  try {
+    const res = await fetch('/api/calculate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.error) { showError(data.error); return; }
+    renderResults(data);
+  } catch (e) {
+    showError('Connection error. Is the Python backend running? → python3 calculator.py');
+  } finally {
+    btn.classList.remove('loading');
+    btn.querySelector('span').textContent = ' Calculate Yearly Cost';
+  }
+}
+
+// ─────────────────────────────────────────────
+//  RENDER
+// ─────────────────────────────────────────────
+function renderResults(d) {
+  const { lease, finance, winner, savings_per_year, reasons, car_name } = d;
+  const isLease = winner === 'lease';
+
+  // Verdict banner
+  const banner = document.getElementById('verdictBanner');
+  banner.className = 'verdict-banner ' + (isLease ? 'lease-wins' : 'finance-wins');
+  document.getElementById('verdictTitle').textContent =
+    isLease ? '🏆 Leasing is Cheaper' : '🏆 Financing is Cheaper';
+  document.getElementById('verdictSub').textContent =
+    `For ${car_name} · ${d.params.lease_years}-yr lease vs ${d.params.finance_years}-yr finance`;
+  document.getElementById('verdictAmount').textContent = fmt(savings_per_year);
+
+  // Monthly payments
+  document.getElementById('leaseMonthly').textContent = fmt(lease.monthly_payment) + '/mo';
+  document.getElementById('financeMonthly').textContent = fmt(finance.monthly_payment) + '/mo';
+
+  // Highlight winner panel
+  document.getElementById('leasePanel').classList.toggle('winner-panel', isLease);
+  document.getElementById('financePanel').classList.toggle('winner-panel', !isLease);
+
+  // Totals
+  document.getElementById('leaseTotal').textContent = fmt(lease.avg_yearly_cost) + '/yr';
+  document.getElementById('financeTotal').textContent = fmt(finance.avg_yearly_cost) + '/yr';
+
+  // Max value for bar scaling
+  const leaseRows = [
+    { label: 'Lease Payments (monthly × 12)', val: lease.annual_payment, tooltip: `$${Math.round(lease.monthly_payment).toLocaleString()}/mo × 12 (includes interest)` },
+    { label: 'Maintenance',                   val: lease.maintenance_per_yr },
+    { label: 'Insurance',                     val: lease.insurance_per_yr },
+    { label: 'Extra Mileage',                 val: lease.extra_mileage_per_yr },
+    { label: 'Net Depreciation Loss',         val: 0,  note: 'Walk away — no loss' },
+    { label: '✦ Tax Saving (lease pmt)',      val: lease.tax_saving_per_yr, saving: true },
+    { label: '✦ Tax Saving (interest)',       val: 0,  note: 'N/A — no loan' },
+    { label: '✦ Tax Saving (CCA)',            val: 0,  note: 'N/A — not owner' },
+  ];
+  // sale_net: positive = gain (reduces cost), negative = loss (adds cost)
+  const saleIsGain   = finance.sale_net >= 0;
+  const saleLabel    = saleIsGain
+    ? '✦ Sale Equity Gain'
+    : '⚠ Sale Shortfall (underwater)';
+  const saleTooltip  = `Sale price $${Math.round(finance.estimated_sale_price).toLocaleString()} − loan balance $${Math.round(finance.remaining_balance).toLocaleString()} = ${finance.sale_net >= 0 ? '+' : ''}$${Math.round(finance.sale_net).toLocaleString()} · ${(finance.total_km||0).toLocaleString()} km · mileage penalty $${Math.round(finance.mileage_penalty).toLocaleString()}`;
+
+  const financeRows = [
+    { label: 'Loan Payments (monthly × 12)', val: finance.annual_payment,
+      tooltip: `$${Math.round(finance.monthly_payment).toLocaleString()}/mo × 12 · ${finance.sell_year}-yr of ${finance.years}-yr term` },
+    { label: 'Maintenance',                  val: finance.maintenance_per_yr },
+    { label: 'Insurance',                    val: finance.insurance_per_yr },
+    { label: 'Extra Mileage',                val: 0,  note: 'None — you own it' },
+    { label: saleLabel,
+      val:   Math.abs(finance.sale_net_per_yr),
+      saving: saleIsGain,
+      loss:   !saleIsGain,
+      tooltip: saleTooltip },
+    { label: '✦ Tax Saving (lease pmt)',     val: 0,  note: 'N/A — no lease' },
+    { label: '✦ Tax Saving (interest)',      val: finance.tax_saving_interest_per_yr, saving: true },
+    { label: '✦ Tax Saving (CCA)',           val: finance.tax_saving_cca_per_yr,       saving: true },
+  ];
+
+  const allVals = [...leaseRows, ...financeRows].map(r => Math.abs(r.val));
+  const maxVal = Math.max(...allVals, 1);
+
+  document.getElementById('leaseBreakdown').innerHTML = buildBreakdown(leaseRows, maxVal, 'lease-bar');
+  document.getElementById('financeBreakdown').innerHTML = buildBreakdown(financeRows, maxVal, 'finance-bar');
+
+  // Reasons
+  const rl = document.getElementById('reasonsList');
+  rl.innerHTML = reasons.map(r => `
+    <div class="reason-item">
+      <div class="reason-bullet"></div>
+      <div class="reason-text">${r}</div>
+    </div>`).join('');
+
+  const resultsEl = document.getElementById('results');
+  resultsEl.classList.add('visible');
+  resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Animate bars after render
+  setTimeout(() => {
+    document.querySelectorAll('.cost-bar-fill[data-width]').forEach(el => {
+      el.style.width = el.dataset.width + '%';
+    });
+  }, 100);
+}
+
+function buildBreakdown(rows, maxVal, barClass) {
+  return rows.map(row => {
+    const isSaving = !!row.saving;
+    const isLoss   = !!row.loss;
+    const isNote   = !!row.note;
+    const pct      = row.val / maxVal * 100;
+    const barC     = isSaving ? 'saving-bar' : isLoss ? 'loss-bar' : barClass;
+
+    let valStr;
+    if (isNote) {
+      valStr = `<span style="color:var(--muted);font-size:0.72rem;text-align:right;min-width:70px;display:inline-block">${row.note}</span>`;
+    } else if (isSaving) {
+      const sub = row.tooltip ? `<span style="font-size:0.65rem;color:var(--sub);display:block">${row.tooltip}</span>` : '';
+      valStr = `<span class="cost-value negative">− ${fmt(row.val)}${sub}</span>`;
+    } else if (isLoss) {
+      const sub = row.tooltip ? `<span style="font-size:0.65rem;color:var(--sub);display:block">${row.tooltip}</span>` : '';
+      valStr = `<span class="cost-value" style="color:var(--danger)">+ ${fmt(row.val)}${sub}</span>`;
+    } else {
+      const sub = row.tooltip ? `<span style="font-size:0.65rem;color:var(--sub);display:block">${row.tooltip}</span>` : '';
+      valStr = `<span class="cost-value">${fmt(row.val)}${sub}</span>`;
+    }
+
+    return `
+    <div class="cost-row">
+      <div class="cost-label">${row.label}</div>
+      <div class="cost-bar-wrap">
+        <div class="cost-bar-bg">
+          <div class="cost-bar-fill ${barC}" style="width:0%" data-width="${isNote ? 0 : pct.toFixed(1)}"></div>
+        </div>
+      </div>
+      ${valStr}
+    </div>`;
+  }).join('');
+}
+
+// ─────────────────────────────────────────────
+//  UTILS
+// ─────────────────────────────────────────────
+function showError(msg) {
+  const el = document.getElementById('errorBox');
+  el.textContent = '⚠ ' + msg;
+  el.classList.add('visible');
+}
+function hideError() {
+  document.getElementById('errorBox').classList.remove('visible');
+}
+
+// Enter key support
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) calculate();
+});
+
+// Keep sell_year default in sync with finance_years
+function syncSellYear() {
+  const fy = +document.getElementById('finance_years').value;
+  const sy = document.getElementById('sell_year');
+  if (+sy.value > fy) sy.value = fy;
+  sy.max = fy;
+}
+init();
+</script>
+</body>
+</html>
