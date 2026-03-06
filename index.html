@@ -55,7 +55,8 @@
     }
     .header-inner {
       max-width: 1200px; margin: 0 auto;
-      display: flex; align-items: center; gap: 1.5rem;
+      display: flex; align-items: center; gap: 1.25rem;
+      flex-wrap: wrap;
     }
     .logo-badge {
       width: 52px; height: 52px; border-radius: 12px;
@@ -84,6 +85,15 @@
       font-family: 'DM Mono', monospace;
       font-size: 0.7rem; padding: 0.35rem 0.75rem; border-radius: 100px;
       white-space: nowrap;
+    }
+    @media (max-width: 600px) {
+      header { padding: 1.25rem 1rem 1rem; }
+      .header-inner { gap: 0.75rem; }
+      .header-tag { margin-left: 0; font-size: 0.65rem; }
+      .header-text h1 { font-size: 1.2rem; }
+      .header-text p { font-size: 0.75rem; }
+      .logo-badge { width: 40px; height: 40px; }
+      .logo-badge svg { width: 22px; height: 22px; }
     }
 
     /* ── MAIN LAYOUT ── */
@@ -501,7 +511,7 @@
       <h1>Uber Driver <span>Cost Calculator</span></h1>
       <p>Lease vs Finance — Average yearly cost comparison with tax deductions</p>
     </div>
-    <div class="header-tag">🇨🇦 Canada · 2024</div>
+    <div class="header-tag">🇨🇦 Canada · 2026</div>
   </div>
 </header>
 
@@ -700,7 +710,7 @@
 
 <footer>
   Data sources: Toyota Financial, Honda Financial, Ford Credit, Hyundai Finance, Mazda Capital ·
-  Insurance: TD Insurance, Intact, Aviva Canada (2024 avg) ·
+  Insurance: TD Insurance, Intact, Aviva Canada (2026 avg) ·
   CRA Lease Deduction Cap: $1,000/mo · Marginal tax rate assumed: 33%
 </footer>
 
