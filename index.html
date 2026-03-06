@@ -858,9 +858,9 @@ function renderResults(d) {
   // sale_net: positive = gain (reduces cost), negative = loss (adds cost)
   const saleIsGain   = finance.sale_net >= 0;
   const saleLabel    = saleIsGain
-    ? '✦ Sale Equity Gain'
-    : '⚠ Sale Shortfall (underwater)';
-  const saleTooltip  = `Sale price $${Math.round(finance.estimated_sale_price).toLocaleString()} − loan balance $${Math.round(finance.remaining_balance).toLocaleString()} = ${finance.sale_net >= 0 ? '+' : ''}$${Math.round(finance.sale_net).toLocaleString()} · ${(finance.total_km||0).toLocaleString()} km · mileage penalty $${Math.round(finance.mileage_penalty).toLocaleString()}`;
+    ? '✦ Sale Equity Gain (one-time)'
+    : '⚠ Sale Shortfall — underwater (one-time)';
+  const saleTooltip  = `ONE-TIME at year ${finance.sell_year}: Sale price $${Math.round(finance.estimated_sale_price).toLocaleString()} − loan balance $${Math.round(finance.remaining_balance).toLocaleString()} = ${finance.sale_net >= 0 ? '+' : ''}$${Math.round(finance.sale_net).toLocaleString()} · ${(finance.total_km||0).toLocaleString()} km driven · mileage penalty $${Math.round(finance.mileage_penalty).toLocaleString()} · amortised over ${finance.sell_year} yrs = ${finance.sale_net >= 0 ? '+' : ''}$${Math.round(finance.sale_net_per_yr).toLocaleString()}/yr in total cost`;
 
   const financeRows = [
     { label: 'Loan Payments (monthly × 12)', val: finance.annual_payment,
@@ -869,7 +869,7 @@ function renderResults(d) {
     { label: 'Insurance',                    val: finance.insurance_per_yr },
     { label: 'Extra Mileage',                val: 0,  note: 'None — you own it' },
     { label: saleLabel,
-      val:   Math.abs(finance.sale_net_per_yr),
+      val:   Math.abs(finance.sale_net),
       saving: saleIsGain,
       loss:   !saleIsGain,
       tooltip: saleTooltip },
