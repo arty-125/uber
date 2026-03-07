@@ -555,7 +555,7 @@
       </div>
       <div class="field">
         <label>Lease Term (years)</label>
-        <input type="number" id="lease_years" value="3" min="1" max="5" />
+        <input type="number" id="lease_years" value="3" min="1" max="5" oninput="syncLeaseTradeYear()" />
       </div>
       <div class="field">
         <label>Interest Rate (APR %)</label>
@@ -591,6 +591,15 @@
         <input type="number" id="lease_mileage_allowance" value="20000" min="0" step="1000" oninput="updateMileagePreview()" />
         <div class="field-hint">Standard: 20,000 km/yr — extra km are charged above this</div>
         <div id="mileage_preview" class="mileage-preview"></div>
+      </div>
+      <div class="field">
+        <label>Preferred Lease Trade Year</label>
+        <select id="lease_trade_year" onchange="syncLeaseTradeYear()">
+          <option value="1">Year 1 — Early trade</option>
+          <option value="2">Year 2 — Mid-lease trade</option>
+          <option value="3" selected>Year 3 — Full term (default)</option>
+        </select>
+        <div class="field-hint" id="trade_year_hint">Full term — leasing company charges full per-km rate, no relief.</div>
       </div>
     </div>
 
@@ -779,6 +788,7 @@ function selectCar(key) {
   document.getElementById('extra_mileage_cost').value = car.extra_mileage_cost;
   document.getElementById('lease_mileage_allowance').value = car.lease_mileage_allowance;
   updateMileagePreview();
+  updateTradeYearHint();
   // Hide results
   document.getElementById('results').classList.remove('visible');
 }
@@ -793,20 +803,21 @@ async function calculate() {
   hideError();
 
   const payload = {
-    car_key:          selectedCar,
-    car_price:        +document.getElementById('car_price').value,
-    lease_years:      +document.getElementById('lease_years').value,
-    finance_years:    +document.getElementById('finance_years').value,
-    km_per_year:      +document.getElementById('km_per_year').value,
-    lease_rate:       +document.getElementById('lease_rate').value,
-    finance_rate:     +document.getElementById('finance_rate').value,
-    insurance_lease:  +document.getElementById('insurance_lease').value,
-    insurance_finance:+document.getElementById('insurance_finance').value,
-    maintenance_lease:+document.getElementById('maintenance_lease').value,
-    maintenance_finance: +document.getElementById('maintenance_finance').value,
-    extra_mileage_cost:       +document.getElementById('extra_mileage_cost').value,
-    lease_mileage_allowance:  +document.getElementById('lease_mileage_allowance').value,
-    sell_year:                +document.getElementById('sell_year').value,
+    car_key:               selectedCar,
+    car_price:             +document.getElementById('car_price').value,
+    lease_years:           +document.getElementById('lease_years').value,
+    finance_years:         +document.getElementById('finance_years').value,
+    km_per_year:           +document.getElementById('km_per_year').value,
+    lease_rate:            +document.getElementById('lease_rate').value,
+    finance_rate:          +document.getElementById('finance_rate').value,
+    insurance_lease:       +document.getElementById('insurance_lease').value,
+    insurance_finance:     +document.getElementById('insurance_finance').value,
+    maintenance_lease:     +document.getElementById('maintenance_lease').value,
+    maintenance_finance:   +document.getElementById('maintenance_finance').value,
+    extra_mileage_cost:    +document.getElementById('extra_mileage_cost').value,
+    lease_mileage_allowance: +document.getElementById('lease_mileage_allowance').value,
+    sell_year:             +document.getElementById('sell_year').value,
+    lease_trade_year:      +document.getElementById('lease_trade_year').value,
   };
 
   try {
@@ -839,7 +850,9 @@ function renderResults(d) {
   document.getElementById('verdictTitle').textContent =
     isLease ? '🏆 Leasing is Cheaper' : '🏆 Financing is Cheaper';
   document.getElementById('verdictSub').textContent =
-    `For ${car_name} · ${d.params.lease_years}-yr lease vs ${d.params.finance_years}-yr finance`;
+    `For ${car_name} · ${d.params.lease_years}-yr lease`
+    + (lease.trade_year < d.params.lease_years ? ` (trade yr ${lease.trade_year})` : '')
+    + ` vs ${d.params.finance_years}-yr finance (sell yr ${finance.sell_year})`;
   document.getElementById('verdictAmount').textContent = fmt(savings_per_year);
 
   // Monthly payments
@@ -855,11 +868,35 @@ function renderResults(d) {
   document.getElementById('financeTotal').textContent = fmt(finance.avg_yearly_cost) + '/yr';
 
   // Max value for bar scaling
+  // Build mileage tooltip with relief info
+  let mileageTooltip = null;
+  if (lease.mileage_relief_pct > 0 && lease.trade_year < d.params.lease_years) {
+    const saved = (lease.extra_mileage_full_rate_per_yr - lease.extra_mileage_per_yr);
+    mileageTooltip = `Year ${lease.trade_year} early trade · ${lease.market_demand.toUpperCase()}-demand car · `
+      + `${lease.mileage_relief_pct}% of overage waived by dealer pull-ahead programme · `
+      + `effective rate $${lease.effective_extra_km_cost.toFixed(3)}/km · `
+      + `saves ~$${Math.round(saved).toLocaleString()}/yr vs full-term rate`;
+  } else if (lease.trade_year < d.params.lease_years) {
+    mileageTooltip = `Year ${lease.trade_year} early trade · ${lease.market_demand.toUpperCase()} demand car · `
+      + `full rate applies · $400 early-exit fee included`;
+  }
+
+  // Build early exit fee row (only shown when trading early)
+  const earlyExitRow = lease.early_exit_fee > 0
+    ? [{ label: '⚠ Early-exit admin fee (one-time)', val: lease.early_exit_fee,
+         tooltip: `One-time fee at year ${lease.trade_year} trade-in (early termination admin / roll-forward cost)` }]
+    : [];
+
   const leaseRows = [
     { label: 'Lease Payments (monthly × 12)', val: lease.annual_payment, tooltip: `$${Math.round(lease.monthly_payment).toLocaleString()}/mo × 12 (includes interest)` },
     { label: 'Maintenance',                   val: lease.maintenance_per_yr },
     { label: 'Insurance',                     val: lease.insurance_per_yr },
-    { label: 'Extra Mileage',                 val: lease.extra_mileage_per_yr },
+    { label: lease.mileage_relief_pct > 0 && lease.trade_year < d.params.lease_years
+        ? `Extra Mileage (${lease.mileage_relief_pct}% relief — ${lease.market_demand} demand)`
+        : 'Extra Mileage',
+      val: lease.extra_mileage_per_yr,
+      tooltip: mileageTooltip },
+    ...earlyExitRow,
     { label: 'Net Depreciation Loss',         val: 0,  note: 'Walk away — no loss' },
     { label: '✦ Tax Saving (lease pmt)',      val: lease.tax_saving_per_yr, saving: true },
     { label: '✦ Tax Saving (interest)',       val: 0,  note: 'N/A — no loan' },
@@ -980,13 +1017,97 @@ function updateMileagePreview() {
   const allowance  = +document.getElementById('lease_mileage_allowance').value || 0;
   const costPerKm  = +document.getElementById('extra_mileage_cost').value || 0;
   const excessKm   = Math.max(0, kmPerYear - allowance);
-  const annualCost = excessKm * costPerKm;
-  const el = document.getElementById('mileage_preview');
+  const el         = document.getElementById('mileage_preview');
   if (!el) return;
+
+  // Apply early-trade mileage relief for the selected car + trade year
+  const car       = carDb[selectedCar] || {};
+  const leaseYrs  = +document.getElementById('lease_years').value || 3;
+  const tradeYr   = +document.getElementById('lease_trade_year').value || leaseYrs;
+  const effectiveTrYr = Math.min(tradeYr, leaseYrs);
+  const relief    = ((car.mileage_relief || {})[effectiveTrYr]) || 0;
+  const effectiveCost = costPerKm * (1 - relief);
+  const annualCost    = excessKm * effectiveCost;
+  const fullCost      = excessKm * costPerKm;
+
   if (excessKm === 0) {
     el.innerHTML = '<span style="color:var(--accent)">✓ Within allowance — no extra charge</span>';
+  } else if (relief > 0 && effectiveTrYr < leaseYrs) {
+    el.innerHTML = `<span style="color:var(--amber)">`
+      + `${excessKm.toLocaleString()} excess km &times; $${effectiveCost.toFixed(3)}/km`
+      + ` = <strong style="color:var(--amber)">$${Math.round(annualCost).toLocaleString()}/yr</strong>`
+      + ` <span style="color:var(--sub);font-size:0.65rem">`
+      + `(full rate $${Math.round(fullCost).toLocaleString()}/yr · ${Math.round(relief*100)}% waived by pull-ahead)`
+      + `</span></span>`;
   } else {
-    el.innerHTML = `<span style="color:var(--amber)">${excessKm.toLocaleString()} excess km &times; $${costPerKm}/km = <strong style="color:var(--amber)">$${Math.round(annualCost).toLocaleString()}/yr</strong></span>`;
+    el.innerHTML = `<span style="color:var(--amber)">${excessKm.toLocaleString()} excess km &times; $${costPerKm}/km`
+      + ` = <strong style="color:var(--amber)">$${Math.round(annualCost).toLocaleString()}/yr</strong></span>`;
+  }
+}
+
+// ─────────────────────────────────────────────
+//  TRADE YEAR SYNC & HINT
+// ─────────────────────────────────────────────
+function syncLeaseTradeYear() {
+  const leaseYrs = +document.getElementById('lease_years').value || 3;
+  const tyEl = document.getElementById('lease_trade_year');
+  // Rebuild options to match lease term
+  const currentVal = +tyEl.value || leaseYrs;
+  tyEl.innerHTML = '';
+  for (let yr = 1; yr <= leaseYrs; yr++) {
+    const opt  = document.createElement('option');
+    opt.value  = yr;
+    opt.textContent = yr < leaseYrs
+      ? `Year ${yr} — Early trade`
+      : `Year ${yr} — Full term (default)`;
+    if (yr === Math.min(currentVal, leaseYrs)) opt.selected = true;
+    tyEl.appendChild(opt);
+  }
+  updateTradeYearHint();
+  updateMileagePreview();
+}
+
+function updateTradeYearHint() {
+  const car     = carDb[selectedCar];
+  const hint    = document.getElementById('trade_year_hint');
+  if (!hint || !car) return;
+
+  const leaseYrs = +document.getElementById('lease_years').value || 3;
+  const tradeYr  = +document.getElementById('lease_trade_year').value || leaseYrs;
+  const ty       = Math.min(tradeYr, leaseYrs);
+  const relief   = ((car.mileage_relief || {})[ty]) || 0;
+  const demand   = car.market_demand || 'medium';
+  const pct      = Math.round(relief * 100);
+
+  const demandColor = demand === 'high'
+    ? 'var(--accent)'
+    : demand === 'medium'
+    ? 'var(--amber)'
+    : 'var(--danger)';
+  const demandLabel = demand.charAt(0).toUpperCase() + demand.slice(1);
+
+  const contractRate = car.extra_mileage_cost || (+document.getElementById('extra_mileage_cost').value) || 0.15;
+
+  if (ty >= leaseYrs) {
+    const effRate = (contractRate * (1 - relief)).toFixed(3);
+    hint.innerHTML = `Full-term return (yr ${ty}) &mdash; <strong>${demandLabel}-demand car</strong>`
+      + (pct > 0
+          ? ` &middot; <span style="color:${demandColor}">${pct}% effective mileage reduction`
+            + ` via lender loyalty credit/settlement &middot; effective rate $${effRate}/km`
+            + ` vs contractual $${contractRate.toFixed(2)}/km</span>`
+          : ` &middot; <span style="color:var(--danger)">near-zero lender relief`
+            + ` &mdash; near-full contractual rate $${contractRate.toFixed(2)}/km enforced</span>`
+        );
+  } else if (pct > 0) {
+    hint.innerHTML = `<span style="color:${demandColor}">`
+      + `Year ${ty} early trade &middot; <strong>${demandLabel}-demand car</strong>`
+      + ` &middot; ~${pct}% of mileage overage waived by dealer pull-ahead program`
+      + `</span>`;
+  } else {
+    hint.innerHTML = `<span style="color:var(--danger)">`
+      + `Year ${ty} early trade &middot; <strong>${demandLabel}-demand car</strong>`
+      + ` &middot; minimal pull-ahead programs &mdash; full mileage rate applies + $400 early-exit fee`
+      + `</span>`;
   }
 }
 
@@ -997,7 +1118,7 @@ function syncSellYear() {
   if (+sy.value > fy) sy.value = fy;
   sy.max = fy;
 }
-init().then(() => updateMileagePreview());
+init().then(() => { updateMileagePreview(); syncLeaseTradeYear(); });
 </script>
 </body>
 </html>
