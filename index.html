@@ -392,6 +392,16 @@
       font-size: 0.82rem;
     }
     .cost-row:last-child { border-bottom: none; }
+    .cost-separator {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.68rem;
+      color: var(--sub);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 0.6rem 0 0.25rem;
+      border-top: 1px solid var(--border);
+      margin-top: 0.2rem;
+    }
     .cost-label { color: var(--sub); flex: 1; }
     .cost-bar-wrap { flex: 2; margin: 0 0.75rem; }
     .cost-bar-bg {
@@ -601,6 +611,19 @@
         </select>
         <div class="field-hint" id="trade_year_hint">Full term — leasing company charges full per-km rate, no relief.</div>
       </div>
+      <div class="field">
+        <label>At End of Lease</label>
+        <select id="lease_end_action" onchange="toggleBuyoutFields()">
+          <option value="return" selected>Return the car</option>
+          <option value="buyout">Buy out the car (take over ownership)</option>
+        </select>
+        <div class="field-hint">Return = walk away. Buy out = finance the residual at the car's loan APR.</div>
+      </div>
+      <div class="field" id="buyout_years_field" style="display:none;">
+        <label>Finance Buyout Over (years)</label>
+        <input type="number" id="buyout_years" value="3" min="1" max="7" />
+        <div class="field-hint" id="buyout_hint">Buyout price = contractual residual. Select a car to see the estimate.</div>
+      </div>
     </div>
 
     <!-- FINANCE PANEL -->
@@ -693,7 +716,7 @@
       <div class="result-panel" id="leasePanel">
         <div class="result-header">
           <div class="panel-dot" style="background:var(--lease);box-shadow:0 0 8px var(--lease)"></div>
-          <div class="result-title">Lease — Avg Yearly Cost</div>
+          <div class="result-title" id="leasePanelTitle">Lease — Avg Yearly Cost</div>
           <div class="result-total lease-color" id="leaseTotal">—</div>
         </div>
         <div id="leaseBreakdown"></div>
@@ -789,8 +812,31 @@ function selectCar(key) {
   document.getElementById('lease_mileage_allowance').value = car.lease_mileage_allowance;
   updateMileagePreview();
   updateTradeYearHint();
+  toggleBuyoutFields();
   // Hide results
   document.getElementById('results').classList.remove('visible');
+}
+
+// ─────────────────────────────────────────────
+//  BUYOUT TOGGLE
+// ─────────────────────────────────────────────
+function toggleBuyoutFields() {
+  const action = document.getElementById('lease_end_action').value;
+  const field  = document.getElementById('buyout_years_field');
+  field.style.display = (action === 'buyout') ? '' : 'none';
+  if (action === 'buyout') {
+    const car   = carDb[selectedCar];
+    const hint  = document.getElementById('buyout_hint');
+    if (car && hint) {
+      const price      = +document.getElementById('car_price').value || car.msrp;
+      const buyoutEst  = Math.round(car.residual_value_pct * price);
+      const pct        = Math.round(car.residual_value_pct * 100);
+      hint.textContent =
+        `Buyout price ≈ $${buyoutEst.toLocaleString()} `
+        + `(${pct}% of $${Math.round(price).toLocaleString()} MSRP) · `
+        + `financed at ${car.finance_rate}% APR.`;
+    }
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -818,6 +864,8 @@ async function calculate() {
     lease_mileage_allowance: +document.getElementById('lease_mileage_allowance').value,
     sell_year:             +document.getElementById('sell_year').value,
     lease_trade_year:      +document.getElementById('lease_trade_year').value,
+    lease_end_action:      document.getElementById('lease_end_action').value,
+    buyout_years:          +document.getElementById('buyout_years').value || 3,
   };
 
   try {
@@ -842,7 +890,8 @@ async function calculate() {
 // ─────────────────────────────────────────────
 function renderResults(d) {
   const { lease, finance, winner, savings_per_year, reasons, car_name } = d;
-  const isLease = winner === 'lease';
+  const isLease  = winner === 'lease';
+  const isBuyout = lease.lease_end_action === 'buyout';
 
   // Verdict banner
   const banner = document.getElementById('verdictBanner');
@@ -850,13 +899,23 @@ function renderResults(d) {
   document.getElementById('verdictTitle').textContent =
     isLease ? '🏆 Leasing is Cheaper' : '🏆 Financing is Cheaper';
   document.getElementById('verdictSub').textContent =
-    `For ${car_name} · ${d.params.lease_years}-yr lease`
-    + (lease.trade_year < d.params.lease_years ? ` (trade yr ${lease.trade_year})` : '')
-    + ` vs ${d.params.finance_years}-yr finance (sell yr ${finance.sell_year})`;
+    `For ${car_name} · ${
+      isBuyout
+        ? `${d.params.lease_years}-yr lease + ${lease.buyout_years}-yr buyout (${lease.total_years} yr total)`
+        : `${d.params.lease_years}-yr lease`
+          + (lease.trade_year < d.params.lease_years ? ` (trade yr ${lease.trade_year})` : '')
+    } vs ${d.params.finance_years}-yr finance (sell yr ${finance.sell_year})`;
   document.getElementById('verdictAmount').textContent = fmt(savings_per_year);
 
+  // Update lease panel title
+  document.getElementById('leasePanelTitle').textContent = isBuyout
+    ? `Lease+Buyout — Avg over ${lease.total_years} yr`
+    : 'Lease — Avg Yearly Cost';
+
   // Monthly payments
-  document.getElementById('leaseMonthly').textContent = fmt(lease.monthly_payment) + '/mo';
+  document.getElementById('leaseMonthly').textContent = isBuyout
+    ? `${fmt(lease.monthly_payment)}/mo lease → ${fmt(lease.buyout_monthly_payment)}/mo buyout`
+    : fmt(lease.monthly_payment) + '/mo';
   document.getElementById('financeMonthly').textContent = fmt(finance.monthly_payment) + '/mo';
 
   // Highlight winner panel
@@ -888,6 +947,7 @@ function renderResults(d) {
     : [];
 
   const leaseRows = [
+    ...(isBuyout ? [{ separator: `Phase 1 — Lease (yr 1–${lease.years})` }] : []),
     { label: 'Lease Payments (monthly × 12)', val: lease.annual_payment, tooltip: `$${Math.round(lease.monthly_payment).toLocaleString()}/mo × 12 (includes interest)` },
     { label: 'Maintenance',                   val: lease.maintenance_per_yr },
     { label: 'Insurance',                     val: lease.insurance_per_yr },
@@ -895,12 +955,28 @@ function renderResults(d) {
         ? `Extra Mileage (${lease.mileage_relief_pct}% relief — ${lease.market_demand} demand)`
         : 'Extra Mileage',
       val: lease.extra_mileage_per_yr,
+      note: (isBuyout && lease.extra_mileage_per_yr === 0) ? 'N/A — buying car out' : undefined,
       tooltip: mileageTooltip },
     ...earlyExitRow,
-    { label: 'Net Depreciation Loss',         val: 0,  note: 'Walk away — no loss' },
+    { label: 'Net Depreciation Loss',
+      val: 0,
+      note: isBuyout ? 'N/A — exercising buyout' : 'Walk away — no loss' },
     { label: '✦ Tax Saving (lease pmt)',      val: lease.tax_saving_per_yr, saving: true },
-    { label: '✦ Tax Saving (interest)',       val: 0,  note: 'N/A — no loan' },
-    { label: '✦ Tax Saving (CCA)',            val: 0,  note: 'N/A — not owner' },
+    ...(!isBuyout ? [
+      { label: '✦ Tax Saving (interest)',     val: 0,  note: 'N/A — no loan' },
+      { label: '✦ Tax Saving (CCA)',          val: 0,  note: 'N/A — not owner' },
+    ] : [
+      { separator: `Phase 2 — Buyout Loan (yr ${lease.years + 1}–${lease.total_years})` },
+      { label: `Buyout Loan — ${lease.buyout_price_pct}% residual, ${lease.buyout_years}-yr payoff`,
+        val: lease.buyout_annual_payment,
+        tooltip: `$${Math.round(lease.buyout_monthly_payment).toLocaleString()}/mo × 12`
+          + ` · contractual residual $${Math.round(lease.buyout_price).toLocaleString()}`
+          + ` vs actual market $${Math.round(lease.market_value_at_buyout).toLocaleString()}`
+          + ` (+$${Math.round(lease.buyout_vs_market_gap).toLocaleString()} buyout premium)` },
+      { label: 'Maintenance (ownership, rising)', val: lease.buyout_maintenance_avg },
+      { label: 'Insurance (ownership)',           val: lease.buyout_insurance_per_yr },
+      { label: '✦ Tax Saving (buyout interest + CCA)', val: lease.buyout_tax_avg, saving: true },
+    ]),
   ];
   // sale_net: positive = gain (reduces cost), negative = loss (adds cost)
   const saleIsGain   = finance.sale_net >= 0;
@@ -931,7 +1007,7 @@ function renderResults(d) {
     { label: '✦ Tax Saving (CCA)',           val: finance.tax_saving_cca_per_yr,       saving: true },
   ];
 
-  const allVals = [...leaseRows, ...financeRows].map(r => Math.abs(r.val));
+  const allVals = [...leaseRows, ...financeRows].filter(r => !r.separator).map(r => Math.abs(r.val));
   const maxVal = Math.max(...allVals, 1);
 
   document.getElementById('leaseBreakdown').innerHTML = buildBreakdown(leaseRows, maxVal, 'lease-bar');
@@ -959,6 +1035,9 @@ function renderResults(d) {
 
 function buildBreakdown(rows, maxVal, barClass) {
   return rows.map(row => {
+    if (row.separator) {
+      return `<div class="cost-separator">${row.separator}</div>`;
+    }
     const isSaving = !!row.saving;
     const isLoss   = !!row.loss;
     const isNote   = !!row.note;

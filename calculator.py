@@ -499,6 +499,163 @@ def calculate_lease(params, car):
     return breakdown
 
 
+def calculate_lease_with_buyout(params, car):
+    """
+    Combined cost: full-term lease followed by financing the residual (buyout).
+
+    Phase 1 — Lease (lease_years):
+        Normal lease payments, maintenance, insurance.
+        NO excess-mileage charges — the driver buys the car instead of
+        returning it, so there is no per-km overage bill.  The high-mileage
+        "penalty" appears instead as the gap between the contractual residual
+        price and the car's actual depressed market value at lease end
+        (see `buyout_vs_market_gap`).
+
+    Phase 2 — Buyout loan (buyout_years):
+        Customer exercises the purchase option at the contractual residual
+        price (residual_value_pct × car_price), financing it at the car's
+        finance_rate.  Maintenance / insurance switch to ownership-mode
+        rates and CCA + interest deductions apply.
+
+    Key insight for Uber drivers:
+        Contractual residual is set at lease inception assuming ~20,000 km/yr.
+        At 90,000 km/yr the car's actual market value at lease end is far
+        below that residual — the driver pays a premium over fair market
+        value when buying out.  This hidden cost is quantified and reported.
+    """
+    price        = params['car_price']
+    lease_years  = params['lease_years']
+    buyout_years = params.get('buyout_years', 3)
+    km_per_year  = params['km_per_year']
+
+    # ── Phase 1: full-term lease, no excess-mileage billing ──────────────────
+    # Set allowance = km_per_year so excess_km = 0 (no per-km charge on return,
+    # because the customer never returns — she is buying the car).
+    car_lease_phase = dict(car)
+    car_lease_phase['lease_mileage_allowance'] = km_per_year
+    lease_params = dict(params)
+    lease_params['lease_trade_year'] = lease_years   # always full term
+    lease = calculate_lease(lease_params, car_lease_phase)
+
+    # ── Contractual buyout price ──────────────────────────────────────────────
+    # Fixed in the lease contract as residual_value_pct × negotiated price.
+    # Does NOT adjust for actual mileage accumulated.
+    buyout_price = car['residual_value_pct'] * price
+
+    # ── Actual market value vs contractual price ──────────────────────────────
+    km_at_lease_end        = km_per_year * lease_years
+    market_value_at_buyout = market_value_by_mileage(
+        price, car['depreciation'], km_at_lease_end
+    )
+    # Positive = driver pays more than the car is worth on open market
+    buyout_vs_market_gap = buyout_price - market_value_at_buyout
+
+    # ── Buyout loan amortisation ──────────────────────────────────────────────
+    rate_annual  = car['finance_rate'] / 100
+    monthly_rate = rate_annual / 12
+    n_payments   = buyout_years * 12
+    if monthly_rate > 0:
+        buyout_monthly = (
+            buyout_price
+            * (monthly_rate * (1 + monthly_rate) ** n_payments)
+            / ((1 + monthly_rate) ** n_payments - 1)
+        )
+    else:
+        buyout_monthly = buyout_price / n_payments
+    buyout_annual         = buyout_monthly * 12
+    buyout_interest_total = buyout_annual * buyout_years - buyout_price
+
+    # Year-by-year loan interest (for CRA deduction calculation)
+    bal                = buyout_price
+    buyout_yr_interest = []
+    for _ in range(buyout_years):
+        yr_int = 0.0
+        for _ in range(12):
+            i_pmt  = bal * monthly_rate
+            p_pmt  = buyout_monthly - i_pmt
+            yr_int += i_pmt
+            bal    -= p_pmt
+        buyout_yr_interest.append(yr_int)
+
+    # ── Maintenance during ownership (post-lease) ────────────────────────────
+    # Calendar year during buyout = lease_years + 1 … lease_years + buyout_years.
+    # maintenance_finance rises by maint_increase for each year beyond year 3.
+    maint_base          = car['maintenance_finance']
+    maint_increase      = car['maintenance_finance_annual_increase']
+    buyout_maint_total  = 0.0
+    for yr_offset in range(1, buyout_years + 1):
+        cal_yr = lease_years + yr_offset
+        buyout_maint_total += maint_base + max(0, cal_yr - 3) * maint_increase
+    buyout_maintenance_avg = buyout_maint_total / buyout_years
+
+    insurance_buyout = car['insurance_finance']
+
+    # ── Tax savings during ownership ─────────────────────────────────────────
+    tax_rate = MARGINAL_TAX_RATE
+    biz_use  = BUSINESS_USE_PCT
+
+    # A) CCA Class 10.1 — 30% declining balance on buyout price (CRA cap)
+    ucc       = min(buyout_price, CCA_CLASS_10A_CAP)
+    cca_total = 0.0
+    for yr in range(1, buyout_years + 1):
+        cca_rate   = CCA_CLASS_10A_RATE * 0.5 if yr == 1 else CCA_CLASS_10A_RATE
+        cca_amount = ucc * cca_rate
+        ucc       -= cca_amount
+        cca_total += cca_amount * biz_use * tax_rate
+
+    # B) Interest deduction (CRA $10/day cap = FINANCE_INTEREST_CAP / month)
+    int_savings_total = sum(
+        min(yi, FINANCE_INTEREST_CAP * 12) * biz_use * tax_rate
+        for yi in buyout_yr_interest
+    )
+    buyout_tax_total = cca_total + int_savings_total
+    buyout_tax_avg   = buyout_tax_total / buyout_years
+
+    # ── Phase 2 total ────────────────────────────────────────────────────────
+    buyout_phase_cost = (
+          buyout_annual * buyout_years
+        + buyout_maint_total
+        + insurance_buyout * buyout_years
+        - buyout_tax_total
+    )
+
+    # ── Combined lease + buyout ───────────────────────────────────────────────
+    total_years         = lease_years + buyout_years
+    combined_total_cost = lease['total_cost'] + buyout_phase_cost
+    combined_avg_yearly = combined_total_cost / total_years
+
+    result = dict(lease)
+    result.update({
+        'lease_end_action':        'buyout',
+        'lease_total_cost':        round(lease['total_cost'], 2),
+        'lease_avg_yearly':        round(lease['avg_yearly_cost'], 2),
+        # Buyout price vs market
+        'buyout_price':            round(buyout_price, 2),
+        'buyout_price_pct':        round(car['residual_value_pct'] * 100, 1),
+        'market_value_at_buyout':  round(market_value_at_buyout, 2),
+        'buyout_vs_market_gap':    round(buyout_vs_market_gap, 2),
+        # Buyout loan
+        'buyout_years':            buyout_years,
+        'buyout_monthly_payment':  round(buyout_monthly, 2),
+        'buyout_annual_payment':   round(buyout_annual, 2),
+        'buyout_interest_total':   round(buyout_interest_total, 2),
+        # Ownership operating costs
+        'buyout_maintenance_avg':  round(buyout_maintenance_avg, 2),
+        'buyout_insurance_per_yr': round(insurance_buyout, 2),
+        'buyout_tax_avg':          round(buyout_tax_avg, 2),
+        # Phase 2 total
+        'buyout_phase_cost':       round(buyout_phase_cost, 2),
+        # Combined
+        'combined_total_cost':     round(combined_total_cost, 2),
+        'combined_avg_yearly':     round(combined_avg_yearly, 2),
+        'total_years':             total_years,
+        # Override for comparison — avg_yearly_cost is what get compared
+        'avg_yearly_cost':         round(combined_avg_yearly, 2),
+        'total_cost':              round(combined_total_cost, 2),
+    })
+    return result
+
+
 def calculate_finance(params, car):
     """
     Finance cost calculated up to sell_year (when driver plans to sell).
@@ -726,9 +883,14 @@ def calculate():
         "km_per_year":      float(data.get('km_per_year', 90000)),
         "sell_year":        int(data.get('sell_year', int(data.get('finance_years', 7)))),
         "lease_trade_year": int(data.get('lease_trade_year', int(data.get('lease_years', 3)))),
+        "buyout_years":     int(data.get('buyout_years', 3)),
     }
 
-    lease   = calculate_lease(params, car)
+    lease_end_action = data.get('lease_end_action', 'return')
+    if lease_end_action == 'buyout':
+        lease = calculate_lease_with_buyout(params, car)
+    else:
+        lease = calculate_lease(params, car)
     finance = calculate_finance(params, car)
 
     winner  = "lease" if lease['avg_yearly_cost'] < finance['avg_yearly_cost'] else "finance"
@@ -780,6 +942,23 @@ def calculate():
             f"Full-term return (yr {trade_yr}), {demand_lbl}-demand car: "
             f"lender enforces near-full contractual mileage rate ${car['extra_mileage_cost']:.2f}/km \u2014 "
             f"negligible loyalty/settlement relief for this brand."
+        )
+
+    # For buyout: replace the mileage-relief note with buyout context
+    if lease_end_action == 'buyout':
+        km_at_end = int(params['km_per_year'] * params['lease_years'])
+        gap       = lease.get('buyout_vs_market_gap', 0)
+        prem_str  = f"${abs(gap):,.0f} {'above' if gap > 0 else 'below'} market"
+        relief_note = (
+            f"No per-km overages on buyout \u2014 you keep the car. "
+            f"Contractual residual ${lease['buyout_price']:,.0f} "
+            f"({lease['buyout_price_pct']}% of MSRP) is {prem_str}: "
+            f"actual value at {km_at_end:,} km = ${lease['market_value_at_buyout']:,.0f}. "
+            f"Buyout financed at {car['finance_rate']}% over {lease['buyout_years']} yr "
+            f"= ${lease['buyout_monthly_payment']:,.0f}/mo "
+            f"(${lease['buyout_interest_total']:,.0f} interest). "
+            f"Combined Lease+Buyout avg: ${lease['combined_avg_yearly']:,.0f}/yr "
+            f"over {lease['total_years']} yr."
         )
 
     reasons = []
